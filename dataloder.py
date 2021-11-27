@@ -24,7 +24,7 @@ class MiniImagenet(Dataset):
     sets: conains n_way * k_shot for meta-train set, n_way * n_query for meta-test set.
     """
 
-    def __init__(self, root, mode, batchsz, n_way, k_shot, k_query, resize, startidx=0,task=None,num=10):
+    def __init__(self, root, mode, batchsz, n_way, k_shot, k_query, resize, startidx=0,task=None,seed=666):
         """
 
         :param root: root path of mini-imagenet
@@ -66,6 +66,7 @@ class MiniImagenet(Dataset):
         self.path = os.path.join(root, 'images')  # image path
         csvdata = self.loadCSV(os.path.join(root, mode + '.csv'))  # csv path
         self.data = []
+        self.seed=seed
         self.img2label = {}
         for i, (k, v) in enumerate(csvdata.items()):
             self.data.append(v)  # [[img1, img2, ...], [img111, ...]]
@@ -75,7 +76,8 @@ class MiniImagenet(Dataset):
         if task is None:
             self.create_batch(self.batchsz)
         else:
-            self.read_batch(self.batchsz,task,num)
+            self.read_batch(task)
+        
 
     def loadCSV(self, csvf):
         """
@@ -136,23 +138,41 @@ class MiniImagenet(Dataset):
             
             data[str(b)]['support'].append(support_x) 
             data[str(b)]['query'].append(query_x)
-            
+        
+        '''
         task=np.array(task)
         if self.model =='test':
-            pd.DataFrame(task).to_csv(f"dataset/{self.model}_task.csv")
+            pd.DataFrame(task).to_csv(f"dataset/{self.model}_{self.seed}task.csv")
         file = json.dumps(data)
-        f2 = open('dataset/'+self.model+'task.json', 'w')
+        f2 = open(f"dataset/{self.model}_{self.seed}task.json", 'w')
         f2.write(file)
         f2.close()
+        '''
         
         
-    def read_batch(self, batchsz,task,num):
+    def read_batch(self, task):
         """
         create batch for meta-learning.
         ×episode× here means batch, and it means how many sets we want to retain.
         :param episodes: batch size
         :return:
         """
+        print('读取保存下来的task')
+        self.support_x_batch = []  # support set batch
+        self.query_x_batch = []  # query set batch
+        for i in task:  # for each batch
+            #print(i)
+            self.support_x_batch.append(task[i]['support'][0])  # append set to current sets
+            self.query_x_batch.append(task[i]['query'][0])  # append sets to current sets
+        
+    """
+    def read_batch1(self, batchsz,task,num):
+        
+        create batch for meta-learning.
+        ×episode× here means batch, and it means how many sets we want to retain.
+        :param episodes: batch size
+        :return:
+        
         data={}
         self.support_x_batch = []  # support set batch
         self.query_x_batch = []  # query set batch
@@ -192,6 +212,7 @@ class MiniImagenet(Dataset):
         f2 = open('dataset/test_task2.json', 'w')
         f2.write(file)
         f2.close()
+    """
             
 
     def __getitem__(self, index):

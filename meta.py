@@ -8,7 +8,10 @@ import  numpy as np
 
 from    learner import Learner
 from    copy import deepcopy
-
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 
 
 class Meta(nn.Module):
@@ -63,7 +66,7 @@ class Meta(nn.Module):
         if path!=None:
             model = torch.load(path)
         else:
-            model = torch.load(f'checkpoint/maml_5_5_119.pth.tar')
+            model = torch.load(f'checkpoint/maml_5_5_10.pth.tar')
         self.net.load_state_dict(model['net'])
         #self.meta_optim.load_state_dict(model['optimizer'])#优化器来个新的
         
@@ -137,6 +140,7 @@ class Meta(nn.Module):
         # end of all tasks
         # sum over all losses on query set across all tasks
         loss_q = losses_q[-1] / task_num
+        #print(losses_q)
 
         # optimize theta parameters
         self.meta_optim.zero_grad()
@@ -151,7 +155,7 @@ class Meta(nn.Module):
 
         return accs[-1],loss_q.item()
 
-    def finetunning(self, x_spt, y_spt, x_qry, y_qry):
+    def finetunning(self, x_spt, y_spt, x_qry, y_qry,step=None):
         """
 
         :param x_spt:   [setsz, c_, h, w]
@@ -161,6 +165,7 @@ class Meta(nn.Module):
         :return:
         """
         assert len(x_spt.shape) == 4
+        #print(y_qry)
 
         querysz = x_qry.size(0)
 
@@ -169,10 +174,13 @@ class Meta(nn.Module):
         # in order to not ruin the state of running_mean/variance and bn_weight/bias
         # we finetunning on the copied model instead of self.net
         net = deepcopy(self.net)
+        s_loss=[]
+        q_loss=[]
 
         # 1. run the i-th task and compute loss for k=0
         emb,logits = net(x_spt)
         loss = F.cross_entropy(logits, y_spt)
+        s_loss.append(loss.item())
         grad = torch.autograd.grad(loss, net.parameters())
         fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, net.parameters())))
 
@@ -185,6 +193,8 @@ class Meta(nn.Module):
             # scalar
             correct = torch.eq(pred_q, y_qry).sum().item()
             corrects[0] = corrects[0] + correct
+            loss_q = F.cross_entropy(logits_q, y_qry)
+            q_loss.append(loss_q.item())
 
         # this is the loss and accuracy after the first update
         with torch.no_grad():
@@ -200,6 +210,7 @@ class Meta(nn.Module):
             # 1. run the i-th task and compute loss for k=1~K-1
             emb,logits = net(x_spt, fast_weights, bn_training=True)
             loss = F.cross_entropy(logits, y_spt)
+            s_loss.append(loss.item())
             # 2. compute grad on theta_pi
             grad = torch.autograd.grad(loss, fast_weights)
             # 3. theta_pi = theta_pi - train_lr * grad
@@ -208,7 +219,7 @@ class Meta(nn.Module):
             emb,logits_q = net(x_qry, fast_weights, bn_training=True)
             # loss_q will be overwritten and just keep the loss_q on last update step.
             loss_q = F.cross_entropy(logits_q, y_qry)
-
+            q_loss.append(loss_q.item())
             with torch.no_grad():
                 pred_q = F.softmax(logits_q, dim=1).argmax(dim=1)
                 correct = torch.eq(pred_q, y_qry).sum().item()  # convert to numpy
@@ -216,6 +227,20 @@ class Meta(nn.Module):
 
 
         del net
+        #print(s_loss,q_loss)
+        '''
+        #
+        x = np.array(range(0, 10))
+        fig = plt.figure()
+        ax1 = fig.add_subplot(111)
+        plt.xlabel('epoch')
+        plt.ylabel('loss')
+        plt.legend()
+        plt.grid()
+        l1 = ax1.plot(x, s_loss, c='r', marker='.')
+        l2 = ax1.plot(x, q_loss, c='b', marker='.')
+        plt.savefig(f"result/pic/loss{step}.png")
+        '''
 
         accs = np.array(corrects) / querysz
 
